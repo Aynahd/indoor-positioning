@@ -173,7 +173,7 @@ hidden_layer_sizes=(64, 32, 16)  # in server.py
 
 ---
 
-## EXPECTED ACCURACY (Real-World)
+## EXPECTED ACCURACY 
 
 | Method         | Typical Error |
 |----------------|---------------|
