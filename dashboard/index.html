@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLE Indoor Localization</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Rajdhani:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg:       #08090d;
+    --panel:    #0e1017;
+    --border:   #1c2030;
+    --glow:     #00e5ff;
+    --accent2:  #ff4f7b;
+    --accent3:  #a259ff;
+    --txt:      #c8d0e0;
+    --txt2:     #6b7694;
+    --green:    #00ffa3;
+
+    --col-tri:  #ff6b6b;
+    --col-wt:   #ff9f45;
+    --col-kf:   #00ffa3;
+    --col-knn:  #00d4ff;
+    --col-mlp:  #bf73ff;
+    --col-cnn:  #ff5dcd;
+    --col-true: #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .logo {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--glow);
+    text-shadow: 0 0 16px var(--glow);
+  }
+  .logo span { color: var(--txt2); font-weight: 300; }
+  .status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #ff4f7b;
+    box-shadow: 0 0 8px #ff4f7b;
+    display: inline-block;
+    margin-right: 8px;
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+  .status-dot.live { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  #status-text { font-size: 12px; color: var(--txt2); }
+
+  /* ── Layout ── */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--glow), transparent);
+    opacity: 0.5;
+  }
+  .panel-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--glow);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  /* ── Map Canvas ── */
+  #map-wrapper {
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+  }
+  #room-canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    display: block;
+  }
+
+  /* ── RSSI Bars ── */
+  .rssi-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .rssi-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .rssi-label {
+    font-size: 11px;
+    color: var(--txt2);
+    width: 60px;
+    flex-shrink: 0;
+  }
+  .rssi-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: #1a1f2e;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .rssi-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    background: var(--glow);
+  }
+  .rssi-val {
+    font-size: 11px;
+    color: var(--txt);
+    width: 52px;
+    text-align: right;
+  }
+  .dist-val {
+    font-size: 11px;
+    color: var(--txt2);
+    width: 42px;
+    text-align: right;
+  }
+
+  /* ── Algorithm Cards ── */
+  .algo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    grid-column: 1 / 3;
+  }
+  .algo-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .algo-card:hover { border-color: var(--glow); }
+  .algo-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+  }
+  .algo-pos {
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: 1px;
+  }
+  .algo-pos span { font-size: 11px; color: var(--txt2); font-weight: 300; }
+  .algo-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .color-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 0 0 8px 8px;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--txt2);
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── CDF ── */
+  #cdf-chart { max-height: 180px; }
+
+  /* ── Step Counter ── */
+  .step-count {
+    font-size: 11px;
+    color: var(--txt2);
+    margin-top: 6px;
+  }
+
+  .tag-flicker {
+    animation: flicker 1.2s ease-in-out infinite;
+  }
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">BLE<span>-LOC</span> REALTIME</div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="status-dot" id="dot"></span>
+    <span id="status-text">Connecting...</span>
+    <span class="step-count" id="step-counter">Step: 0</span>
+  </div>
+</header>
+
+<div class="main-grid">
+
+  <!-- Left: Map -->
+  <div class="panel" id="map-wrapper">
+    <div class="panel-title">▸ Room Map — Live Tracking</div>
+    <canvas id="room-canvas"></canvas>
+    <div class="legend" id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#fff"></div> True Path</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--col-tri)"></div> Trilateration</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--col-wt)"></div> Weighted</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--col-kf)"></div> Kalman</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--col-knn)"></div> kNN</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--col-mlp)"></div> MLP</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--col-cnn)"></div> CNN</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#00e5ff;border:2px solid #fff"></div> Anchors</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff4f7b"></div> Tag (ESP32)</div>
+    </div>
+  </div>
+
+  <!-- Right top: RSSI -->
+  <div class="panel">
+    <div class="panel-title">▸ Signal Strength (RSSI)</div>
+    <div class="rssi-bars">
+      <div class="rssi-row">
+        <div class="rssi-label">Phone1</div>
+        <div class="rssi-bar-bg"><div class="rssi-bar-fill" id="bar0" style="width:0%;background:var(--col-tri)"></div></div>
+        <div class="rssi-val" id="rssi0">-- dBm</div>
+        <div class="dist-val" id="dist0">-- m</div>
+      </div>
+      <div class="rssi-row">
+        <div class="rssi-label">Phone2</div>
+        <div class="rssi-bar-bg"><div class="rssi-bar-fill" id="bar1" style="width:0%;background:var(--col-wt)"></div></div>
+        <div class="rssi-val" id="rssi1">-- dBm</div>
+        <div class="dist-val" id="dist1">-- m</div>
+      </div>
+      <div class="rssi-row">
+        <div class="rssi-label">Phone3</div>
+        <div class="rssi-bar-bg"><div class="rssi-bar-fill" id="bar2" style="width:0%;background:var(--col-kf)"></div></div>
+        <div class="rssi-val" id="rssi2">-- dBm</div>
+        <div class="dist-val" id="dist2">-- m</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right bottom: CDF chart -->
+  <div class="panel">
+    <div class="panel-title">▸ Error Distribution (CDF)</div>
+    <canvas id="cdf-chart"></canvas>
+  </div>
+
+  <!-- Bottom: Algorithm cards -->
+  <div class="algo-grid">
+    <div class="algo-card">
+      <div class="algo-name"><span class="algo-dot" style="background:var(--col-tri)"></span>TRILATERATION</div>
+      <div class="algo-pos" id="pos-tri">--, --<span> m</span></div>
+      <div class="color-bar" style="background:var(--col-tri)"></div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-name"><span class="algo-dot" style="background:var(--col-wt)"></span>WEIGHTED</div>
+      <div class="algo-pos" id="pos-wt">--, --<span> m</span></div>
+      <div class="color-bar" style="background:var(--col-wt)"></div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-name"><span class="algo-dot" style="background:var(--col-kf)"></span>KALMAN FILTER</div>
+      <div class="algo-pos" id="pos-kf">--, --<span> m</span></div>
+      <div class="color-bar" style="background:var(--col-kf)"></div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-name"><span class="algo-dot" style="background:var(--col-knn)"></span>kNN FINGERPRINT</div>
+      <div class="algo-pos" id="pos-knn">--, --<span> m</span></div>
+      <div class="color-bar" style="background:var(--col-knn)"></div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-name"><span class="algo-dot" style="background:var(--col-mlp)"></span>MLP NEURAL NET</div>
+      <div class="algo-pos" id="pos-mlp">--, --<span> m</span></div>
+      <div class="color-bar" style="background:var(--col-mlp)"></div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-name"><span class="algo-dot" style="background:var(--col-cnn)"></span>CNN NEURAL NET</div>
+      <div class="algo-pos" id="pos-cnn">--, --<span> m</span></div>
+      <div class="color-bar" style="background:var(--col-cnn)"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Canvas Map Renderer
+// ─────────────────────────────────────────────
+
+const canvas = document.getElementById('room-canvas');
+const ctx = canvas.getContext('2d');
+
+let roomW = 10, roomH = 10;
+let anchors = [[0,0],[10,0],[5,9]];
+let history = {};
+let latestPositions = {};
+let latestRSSI = [-100,-100,-100];
+let latestDistances = [0,0,0];
+
+const COLORS = {
+  trilateration: '#ff6b6b',
+  weighted:      '#ff9f45',
+  kalman:        '#00ffa3',
+  knn:           '#00d4ff',
+  mlp:           '#bf73ff',
+  cnn:           '#ff5dcd',
+};
+
+function resizeCanvas() {
+  const wrapper = document.getElementById('map-wrapper');
+  const size = Math.min(wrapper.clientWidth - 32, 560);
+  canvas.width = size;
+  canvas.height = size;
+}
+
+function worldToCanvas(x, y) {
+  const pad = 36;
+  const W = canvas.width - 2*pad;
+  const H = canvas.height - 2*pad;
+  return [
+    pad + (x / roomW) * W,
+    pad + (1 - y / roomH) * H,
+  ];
+}
+
+function drawMap() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  ctx.strokeStyle = '#1a2030';
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx <= roomW; gx++) {
+    const [cx] = worldToCanvas(gx, 0);
+    const [, cy0] = worldToCanvas(gx, 0);
+    const [, cy1] = worldToCanvas(gx, roomH);
+    ctx.beginPath(); ctx.moveTo(cx, cy0); ctx.lineTo(cx, cy1); ctx.stroke();
+  }
+  for (let gy = 0; gy <= roomH; gy++) {
+    const [cx0, cy] = worldToCanvas(0, gy);
+    const [cx1] = worldToCanvas(roomW, gy);
+    ctx.beginPath(); ctx.moveTo(cx0, cy); ctx.lineTo(cx1, cy); ctx.stroke();
+  }
+
+  // Room border
+  const [bx0, by0] = worldToCanvas(0, 0);
+  const [bx1, by1] = worldToCanvas(roomW, roomH);
+  ctx.strokeStyle = '#2a3050';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(bx0, by1, bx1-bx0, by0-by1);
+
+  // Paths
+  for (const [method, color] of Object.entries(COLORS)) {
+    const path = history[method];
+    if (!path || path.length < 2) continue;
+    ctx.beginPath();
+    ctx.strokeStyle = color + '99';
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < path.length; i++) {
+      const [cx, cy] = worldToCanvas(path[i][0], path[i][1]);
+      if (i === 0) ctx.moveTo(cx, cy);
+      else ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+
+    // Current position dot
+    const latest = path[path.length-1];
+    const [cx, cy] = worldToCanvas(latest[0], latest[1]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // Anchors
+  anchors.forEach((a, i) => {
+    const [cx, cy] = worldToCanvas(a[0], a[1]);
+    // Glow ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, 14, 0, Math.PI*2);
+    ctx.strokeStyle = '#00e5ff44';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Filled dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI*2);
+    ctx.fillStyle = '#00e5ff';
+    ctx.fill();
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`P${i+1}`, cx, cy - 16);
+
+    // Range circle (estimated distance)
+    const dist = latestDistances[i];
+    if (dist > 0 && dist < 20) {
+      const pad = 36;
+      const scale = (canvas.width - 2*pad) / roomW;
+      ctx.beginPath();
+      ctx.arc(cx, cy, dist * scale, 0, Math.PI*2);
+      ctx.strokeStyle = '#00e5ff22';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  });
+
+  // Tag estimated position (Kalman — best estimate)
+  if (latestPositions.kalman) {
+    const [cx, cy] = worldToCanvas(latestPositions.kalman[0], latestPositions.kalman[1]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI*2);
+    ctx.strokeStyle = '#ff4f7b';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI*2);
+    ctx.fillStyle = '#ff4f7b';
+    ctx.fill();
+    ctx.fillStyle = '#ff4f7b';
+    ctx.font = 'bold 10px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAG', cx, cy - 18);
+  }
+
+  requestAnimationFrame(drawMap);
+}
+
+// ─────────────────────────────────────────────
+// CDF Chart
+// ─────────────────────────────────────────────
+
+const cdfCtx = document.getElementById('cdf-chart').getContext('2d');
+const errorHistory = { trilateration:[], weighted:[], kalman:[], knn:[], mlp:[], cnn:[] };
+
+const cdfChart = new Chart(cdfCtx, {
+  type: 'line',
+  data: {
+    datasets: Object.entries(COLORS).map(([name, color]) => ({
+      label: name,
+      data: [],
+      borderColor: color,
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.4,
+    }))
+  },
+  options: {
+    animation: false,
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        title: { display: true, text: 'Error (m)', color: '#6b7694', font: { size: 10 } },
+        ticks: { color: '#6b7694', font: { size: 9 } },
+        grid: { color: '#1c2030' },
+      },
+      y: {
+        min: 0, max: 1,
+        title: { display: true, text: 'CDF', color: '#6b7694', font: { size: 10 } },
+        ticks: { color: '#6b7694', font: { size: 9 } },
+        grid: { color: '#1c2030' },
+      }
+    }
+  }
+});
+
+function computeCDF(errors) {
+  if (errors.length < 2) return [];
+  const sorted = [...errors].sort((a,b) => a-b);
+  return sorted.map((v, i) => ({ x: parseFloat(v.toFixed(3)), y: parseFloat(((i+1)/sorted.length).toFixed(3)) }));
+}
+
+// Track last known "true" position from some reference
+// (In real use, you won't have ground truth — CDF shows relative spread)
+
+// ─────────────────────────────────────────────
+// WebSocket Client
+// ─────────────────────────────────────────────
+
+let ws;
+let reconnectTimer;
+
+function connect() {
+  ws = new WebSocket('ws://localhost:8765');
+
+  ws.onopen = () => {
+    document.getElementById('dot').classList.add('live');
+    document.getElementById('status-text').textContent = 'Live — receiving data';
+    clearTimeout(reconnectTimer);
+  };
+
+  ws.onclose = () => {
+    document.getElementById('dot').classList.remove('live');
+    document.getElementById('status-text').textContent = 'Disconnected — retrying...';
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+
+  ws.onmessage = (evt) => {
+    const data = JSON.parse(evt.data);
+    handleUpdate(data);
+  };
+}
+
+function handleUpdate(data) {
+  if (data.room) { roomW = data.room[0]; roomH = data.room[1]; }
+  if (data.anchors) anchors = data.anchors;
+  if (data.history) history = data.history;
+  if (data.positions) latestPositions = data.positions;
+  if (data.distances) latestDistances = data.distances;
+
+  // RSSI bars
+  const rssi = data.rssi || [-100,-100,-100];
+  latestRSSI = rssi;
+  rssi.forEach((r, i) => {
+    const pct = Math.max(0, Math.min(100, (r + 100) / 60 * 100)); // -100..-40 → 0..100
+    document.getElementById(`bar${i}`).style.width = pct + '%';
+    document.getElementById(`rssi${i}`).textContent = r.toFixed(1) + ' dBm';
+    document.getElementById(`dist${i}`).textContent = (data.distances?.[i] ?? '--').toString() + ' m';
+  });
+
+  // Position cards
+  const posFmt = (p) => p ? `${p[0].toFixed(2)}, ${p[1].toFixed(2)}` : '--, --';
+  document.getElementById('pos-tri').innerHTML = posFmt(latestPositions.trilateration) + '<span> m</span>';
+  document.getElementById('pos-wt').innerHTML  = posFmt(latestPositions.weighted) + '<span> m</span>';
+  document.getElementById('pos-kf').innerHTML  = posFmt(latestPositions.kalman) + '<span> m</span>';
+  document.getElementById('pos-knn').innerHTML = posFmt(latestPositions.knn) + '<span> m</span>';
+  document.getElementById('pos-mlp').innerHTML = posFmt(latestPositions.mlp) + '<span> m</span>';
+  document.getElementById('pos-cnn').innerHTML = posFmt(latestPositions.cnn) + '<span> m</span>';
+
+  // Step counter
+  document.getElementById('step-counter').textContent = `Step: ${data.step || 0}`;
+
+  // CDF — accumulate "spread" relative to Kalman (best estimate as reference)
+  if (latestPositions.kalman) {
+    const ref = latestPositions.kalman;
+    for (const method of Object.keys(errorHistory)) {
+      const pos = latestPositions[method];
+      if (pos) {
+        const err = Math.sqrt((pos[0]-ref[0])**2 + (pos[1]-ref[1])**2);
+        errorHistory[method].push(err);
+        if (errorHistory[method].length > 300) errorHistory[method].shift();
+      }
+    }
+
+    if (data.step % 10 === 0) {
+      cdfChart.data.datasets.forEach((ds, i) => {
+        const method = Object.keys(COLORS)[i];
+        ds.data = computeCDF(errorHistory[method]);
+      });
+      cdfChart.update('none');
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+
+window.addEventListener('resize', () => { resizeCanvas(); });
+resizeCanvas();
+requestAnimationFrame(drawMap);
+connect();
+</script>
+</body>
+</html>
